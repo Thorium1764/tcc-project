@@ -1,0 +1,95 @@
+# declaring variables
+
+var x = 4;
+
+# declare mutable variables
+
+var x = 4;
+
+# force a type on a declaration
+
+int x = 4;
+
+# reassign mutable variables
+
+x = 4;
+
+# declare pointers
+
+int *y = &x;
+
+# dereference pointers
+
+value z = *y;
+
+# declare functions
+
+fn add(x: int, y: int) => int
+{
+   return x + y;
+}
+
+# pass and return functions in functions
+
+fn mult_function(somefunc: int => int, x: int) => (int => int)
+{
+}
+
+# call function
+// brackets are optional
+
+var value = add(4, 3);
+
+# currying
+
+var add3 = add(3, _);
+
+# includes
+
+%include "file.ext"
+
+# pattern matching
+
+match number {
+   // curly braces only needed for multi stmt executions
+   1 => {printf("one")}, // exact match
+   2..9 => printf("2-9", // range match
+   1 | 2 | 3 => printf("1, 2, 3"), // multiple value match
+   _ => printf("nothing special") // default
+
+# quick pattern matching with is
+
+var between_2_9 n = n is 2..9;
+
+# piping values between functions
+
+3 $ add 3 $ printf "%d";
+// equivalent to
+printf("%d", add 3 3)
+
+# lambdas
+
+var add = fn a b c => { return a + b + c; } //optional curly braces
+
+or
+
+var add a b c = a + b + c;
+
+# extern functions
+
+extern exit: int => no_return
+
+// structs same as c;
+
+// declaration prefixes
+
+mut: allows mutability
+inline: automatically inline this function
+
+// defines are equivalent to C defines
+
+#define PI 3.14
+
+
+
+
