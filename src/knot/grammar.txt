@@ -16,7 +16,10 @@ x = 4;
 
 # declare pointers
 
-int *y = &x;
+int *y = &x; // completely immutable except freeing
+mut int *y = &x; // address can be mutated
+&int *y = &x // value can be mutated
+mut &int *y = &x // both value and address mutable
 
 # dereference pointers
 
@@ -52,7 +55,7 @@ var add3 = add(3, _);
 
 match number {
    // curly braces only needed for multi stmt executions
-   1 => {printf("one")}, // exact match
+   1 => {printf("one");}, // exact match
    2..9 => printf("2-9", // range match
    1 | 2 | 3 => printf("1, 2, 3"), // multiple value match
    _ => printf("nothing special") // default

@@ -1,5 +1,7 @@
 module Lexer where
 
+import Data.Char
+
 data TokenType
    = Identifier
    | Mutable
@@ -121,6 +123,41 @@ tokenize src index tokens
          buf2 = '0' : 'o' : buf
          new_tokens = (Token OctLit (IntV (read buf2))) : tokens
      in tokenize src index2 new_tokens
+
+   | (peek index 0) == '"'
+   = let (tok, index2) = readStr (index + 1) ""
+         new_tok = tok : tokens
+     in tokenize src index2 new_tok
+
+   | (peek index 0) == '\''
+   = let (tok, index2) = readChar (index + 1) ""
+         new_tok = tok : tokens
+     in tokenize src index2 new_tok
+
+   | isDigit (peek index 0)
+   = let (tok, index2) = completeNum index ""
+         new_tok = tok : tokens
+     in tokenize src index2 new_tok
+
+   | isAlpha (peek index 0)
+   = let (buf, index2) = completeWord index ""
+         new_tok = (identifyKeywords buf) : tokens
+     in tokenize src index2 new_tok
+
+   | (peek index 0) == '/' && (peek index 1) == '/'
+   = let index2 = skipComm index
+     in tokenize src index2 tokens
+
+   | (peek index 0) == '/' && (peek index 1) == '*'
+   = let index2 = skipMultComm index
+     in tokenize src index2 tokens
+
+   | (charExpr index) /= EmptyToken
+   = let (tok, index2) = charExpr index
+     in tokenize src index2 (tok : tokens)
+
+   | (peek index 0) == '\n' || (peek index 0) == '\0'
+   = tokenize src (index + 1) tokens
 
    | otherwise 
    = tokens
