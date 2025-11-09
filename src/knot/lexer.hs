@@ -1,14 +1,13 @@
 module Lexer where
 
 import Data.Char
+import qualified Text.Read as Read
 import Control.Monad.State
 
 data TokenType
    = Identifier
    | Mutable
    | Inline
-   | Define
-   | Include
    | Function
    | Unsigned
    | U8
@@ -97,12 +96,14 @@ data TokenType
    deriving (Show, Eq)
 
 data Value
-   = FLoatV Float
+   = FloatV Float
    | IntV Int
    | CharV Char
    | StringV String
+   | NameV String
    | None
    deriving (Show, Eq)
+
 
 data Token = Token {tokenType :: TokenType, value :: Value} | EmptyToken deriving (Show, Eq)
 
@@ -113,8 +114,6 @@ type Tokenizer a = State TokState a
 tokenize :: Tokenizer () -- returns the reversed list
 tokenize = do
    st <- get
-   let i = index st
-       s = src st
    c0 <- peek 0
    c1 <- peek 1
    c2 <- peek 2
@@ -122,11 +121,11 @@ tokenize = do
       ('0', 'x', _) -> handleHex ""
       ('0', 'o', _) -> handleOct ""
       ('0', 'b', _) -> handleBin ""
-      ('"', _, _) -> handleString
-      ('\'', _, _) -> handleChar
-      ('\'', '\\', _) -> handleEscChar
-      (c, _, _) | isDigit c -> handleNum
-      (c, _, _) | isAlpha c -> handleWord
+      ('"', _, _) -> handleString ""
+      ('\'', c, '\'') -> handleChar c
+      ('\'', '\\', _) -> handleEscChar ""
+      (c, _, _) | isDigit c -> handleNum ""
+      (c, _, _) | isAlpha c -> handleWord ""
       ('/', '/', _) -> handleComm
       ('/', '*', _) -> handleMultComm
       (x, y, z) | fst (charExpr x y z) /= EmptyToken -> handleCharExpr
@@ -134,64 +133,6 @@ tokenize = do
       (c, _, _) | c /= '\0' -> skipOne
       (_, _, _) -> return ()
 
-
-
-      
-   {-| (peek index 0) == '0' && (peek index 1) == 'x'
-   = let (buf, index2) = completeHex (index + 2) ""
-         buf2 = '0' : 'x' : buf
-         new_tokens = (Token HexLit (IntV (read buf2))) : tokens
-     in tokenize src index2 new_tokens
-
-   | (peek index 0) == '0' && (peek index 1) == 'b'
-   = let (buf, index2) = completeBin (index + 2) ""
-         buf2 = '0' : 'b' : buf
-         new_tokens = (Token BinLit (IntV (read buf2))) : tokens
-     in tokenize src index2 new_tokens
-
-   | (peek index 0) == '0' && (peek index 1) == 'o'
-   = let (buf, index2) = completeOct (index + 2) ""
-         buf2 = '0' : 'o' : buf
-         new_tokens = (Token OctLit (IntV (read buf2))) : tokens
-     in tokenize src index2 new_tokens
-
-   | (peek index 0) == '"'
-   = let (tok, index2) = readStr (index + 1) ""
-         new_tok = tok : tokens
-     in tokenize src index2 new_tok
-
-   | (peek index 0) == '\''
-   = let (tok, index2) = readChar (index + 1) ""
-         new_tok = tok : tokens
-     in tokenize src index2 new_tok
-
-   | isDigit (peek index 0)
-   = let (tok, index2) = completeNum index ""
-         new_tok = tok : tokens
-     in tokenize src index2 new_tok
-
-   | isAlpha (peek index 0)
-   = let (buf, index2) = completeWord index ""
-         new_tok = (identifyKeywords buf) : tokens
-     in tokenize src index2 new_tok
-
-   | (peek index 0) == '/' && (peek index 1) == '/'
-   = let index2 = skipComm index
-     in tokenize src index2 tokens
-
-   | (peek index 0) == '/' && (peek index 1) == '*'
-   = let index2 = skipMultComm index
-     in tokenize src index2 tokens
-
-   | (charExpr index) /= EmptyToken
-   = let (tok, index2) = charExpr index
-     in tokenize src index2 (tok : tokens)
-
-   | (peek index 0) == '\n' || (peek index 0) == '\0'
-   = tokenize src (index + 1) tokens
-
-   | otherwise 
-   = tokens-}
    where
       peek :: Int -> Tokenizer Char
       peek offset = do
@@ -203,7 +144,9 @@ tokenize = do
             else pure (s !! (i + offset))
 
       skipOne :: Tokenizer ()
-      skipOne = modify (\st -> st { index = index st + 1})
+      skipOne = do
+         st <- get
+         modify (\st -> st { index = index st + 1})
 
       handleComm :: Tokenizer ()
       handleComm = do
@@ -220,10 +163,6 @@ tokenize = do
          if ca == '*' && cb == '/'
             then skipOne
             else handleMultComm
-
-      charExpr :: Char -> Char -> Char -> (Token, Int)
-      charExpr '<' '<' '=' = (Token LShifAssign None, 3)
-      charExpr _ _ _ = (EmptyToken, -1)
 
       handleCharExpr :: Tokenizer ()
       handleCharExpr = do
@@ -254,6 +193,63 @@ tokenize = do
             then skipOne >> handleOct (peekraw (src st) (index st) : buf)
             else modify (\st -> st { tokens = Token OctLit (IntV (read $ reverse ('0' : 'o' : buf))) : tokens st})
 
+      handleChar :: Char -> Tokenizer ()
+      handleChar c = do
+         st <- get
+         modify (\st -> st { index = index st + 3, tokens = Token CharLit (CharV c) : tokens st})
+
+      handleEscChar :: String -> Tokenizer ()
+      handleEscChar buf = do
+         skipOne
+         chr <- peek 0
+         if chr /= '\'' && chr /= '\0'
+            then handleEscChar (chr : buf)
+            else modify (\st -> st {tokens = Token CharLit (StringV buf) : tokens st})
+
+      handleWord :: String -> Tokenizer ()
+      handleWord buf = do
+         chr <- peek 0
+         if isAlphaNum chr
+            then skipOne >> handleWord (chr : buf)
+            else identifyKeywords buf
+
+      handleString :: String -> Tokenizer ()
+      handleString buf = do
+         skipOne
+         chr <- peek 0
+         if chr /= '"' && chr /= '\0'
+            then handleString (chr : buf)
+            else modify (\st -> st { tokens = Token StrLit (StringV buf) : tokens st})
+
+      handleNum :: String -> Tokenizer ()
+      handleNum buf = do
+         st <- get
+         if isFloatDigit (peekraw (src st) (index st))
+            then skipOne >> handleNum (peekraw (src st) (index st) : buf)
+            else saveNum buf
+
+      saveNum :: String -> Tokenizer ()
+      saveNum buf
+         | not (isVFLoat buf)
+         = modify (\st -> st { tokens = Token Error (StringV ("Error: " ++ buf ++ " is not a valid Number")) : tokens st})
+
+         | isFloat buf
+         = modify (\st -> st { tokens = Token FloatLit (FloatV (read buf)) : tokens st})
+
+         | otherwise
+         = modify (\st -> st { tokens = Token IntLit (IntV (read buf)) : tokens st})
+
+      identifyKeywords :: String -> Tokenizer ()
+      identifyKeywords "fn" = modify (\st -> st { tokens = Token Function None : tokens st})
+      identifyKeywords buf = modify (\st -> st { tokens = Token Identifier (NameV buf) : tokens st})
+
+      charExpr :: Char -> Char -> Char -> (Token, Int)
+      charExpr '<' '<' '=' = (Token LShifAssign None, 3)
+      charExpr _ _ _ = (EmptyToken, -1)
+
+
+
+
 peekraw :: String -> Int -> Char
 peekraw src idx =
    if idx > length src || idx < 0
@@ -261,35 +257,8 @@ peekraw src idx =
       else src !! idx
 
 isBinDigit c = c == '0' || c == '1'
-
-
-      {-completeNum :: Int -> String -> (Token, Int) -- does not work on floats for now
-      completeNum idx buf = 
-         if isDigit (peek idx 0)
-            then let newbuf = (peek idx 0) : buf
-                 in completeNum (idx + 1) newbuf
-            else let int = read $ reverse buf
-                 in (Token IntLit (IntV int), idx)
-
-      completeBin :: Int -> String -> (String, Int)
-      completeBin idx buf = 
-         if (peek idx 0) == 0 || (peek idx 0) == 1
-            then let newbuf = (peek idx 0) : buf
-                 in completeBin (idx + 1) newbuf
-            else (reverse buf, idx)
-
-
-      completeOct :: Int -> String -> (String, Int)
-      completeOct idx buf = 
-         if  isOctDigit (peek idx 0)
-            then let newbuf = (peek idx 0) : buf
-                 in completeOct (idx + 1) newbuf
-            else (reverse buf, idx)
-
-      completeHex :: Int -> String -> (String, Int)
-      completeHex idx buf = 
-         if  isHexDigit (peek idx 0)
-            then let newbuf = (peek idx 0) : buf
-                 in completeHex (idx + 1) newbuf
-            else (reverse buf, idx)-}
-
+isFloatDigit c = isDigit c || elem c ".eE+-"
+isVFLoat f = case Read.readMaybe f :: Maybe Double of
+   Just _ -> True
+   Nothing -> False
+isFloat f = elem '.' f || elem 'e' f || elem 'E' f
