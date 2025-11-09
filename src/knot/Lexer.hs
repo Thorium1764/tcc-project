@@ -86,7 +86,7 @@ data TokenType
    | ModAssign
    | XOrAssign
    | RShiftAssign
-   | LShifAssign
+   | LShiftAssign
    | RShift
    | LShift
    | QMark
@@ -118,19 +118,19 @@ tokenize = do
    c1 <- peek 1
    c2 <- peek 2
    case (c0, c1, c2) of
-      ('0', 'x', _) -> handleHex ""
-      ('0', 'o', _) -> handleOct ""
-      ('0', 'b', _) -> handleBin ""
-      ('"', _, _) -> handleString ""
-      ('\'', c, '\'') -> handleChar c
-      ('\'', '\\', _) -> handleEscChar ""
-      (c, _, _) | isDigit c -> handleNum ""
-      (c, _, _) | isAlpha c -> handleWord ""
-      ('/', '/', _) -> handleComm
-      ('/', '*', _) -> handleMultComm
-      (x, y, z) | fst (charExpr x y z) /= EmptyToken -> handleCharExpr
-      ('\n', _, _) -> skipOne
-      (c, _, _) | c /= '\0' -> skipOne
+      ('0', 'x', _) -> handleHex "" >> tokenize
+      ('0', 'o', _) -> handleOct "" >> tokenize
+      ('0', 'b', _) -> handleBin "" >> tokenize
+      ('"', _, _) -> handleString "" >> tokenize
+      ('\'', c, '\'') -> handleChar c >> tokenize
+      ('\'', '\\', _) -> handleEscChar "" >> tokenize
+      (c, _, _) | isDigit c -> handleNum "" >> tokenize
+      (c, _, _) | isAlpha c -> handleWord "" >> tokenize
+      ('/', '/', _) -> handleComm >> tokenize
+      ('/', '*', _) -> handleMultComm >> tokenize
+      (x, y, z) | fst (charExpr x y z) /= EmptyToken -> handleCharExpr >> tokenize
+      ('\n', _, _) -> skipOne >> tokenize
+      (c, _, _) | c /= '\0' -> skipOne >> tokenize
       (_, _, _) -> return ()
 
    where
@@ -204,14 +204,14 @@ tokenize = do
          chr <- peek 0
          if chr /= '\'' && chr /= '\0'
             then handleEscChar (chr : buf)
-            else modify (\st -> st {tokens = Token CharLit (StringV buf) : tokens st})
+            else modify (\st -> st {tokens = Token CharLit (StringV $ reverse buf) : tokens st})
 
       handleWord :: String -> Tokenizer ()
       handleWord buf = do
          chr <- peek 0
          if isAlphaNum chr
             then skipOne >> handleWord (chr : buf)
-            else identifyKeywords buf
+            else identifyKeywords (reverse buf)
 
       handleString :: String -> Tokenizer ()
       handleString buf = do
@@ -219,14 +219,14 @@ tokenize = do
          chr <- peek 0
          if chr /= '"' && chr /= '\0'
             then handleString (chr : buf)
-            else modify (\st -> st { tokens = Token StrLit (StringV buf) : tokens st})
+            else modify (\st -> st { tokens = Token StrLit (StringV $ reverse buf) : tokens st})
 
       handleNum :: String -> Tokenizer ()
       handleNum buf = do
          st <- get
          if isFloatDigit (peekraw (src st) (index st))
             then skipOne >> handleNum (peekraw (src st) (index st) : buf)
-            else saveNum buf
+            else saveNum (reverse buf)
 
       saveNum :: String -> Tokenizer ()
       saveNum buf
@@ -241,10 +241,37 @@ tokenize = do
 
       identifyKeywords :: String -> Tokenizer ()
       identifyKeywords "fn" = modify (\st -> st { tokens = Token Function None : tokens st})
+      identifyKeywords "char" = modify (\st -> st { tokens = Token CharT None : tokens st})
       identifyKeywords buf = modify (\st -> st { tokens = Token Identifier (NameV buf) : tokens st})
 
       charExpr :: Char -> Char -> Char -> (Token, Int)
-      charExpr '<' '<' '=' = (Token LShifAssign None, 3)
+      charExpr '<' '<' '=' = (Token LShiftAssign None, 3)
+      charExpr '>' '>' '=' = (Token RShiftAssign None, 3)
+      charExpr '<' '<' _ = (Token LShift None, 2)
+      charExpr '>' '>' _ = (Token RShift None, 2)
+      charExpr '=' '=' _ = (Token Equals None, 2)
+      charExpr '<' '=' _ = (Token Lequals None, 2) 
+      charExpr '>' '=' _ = (Token Grequals None, 2)
+      charExpr '!' '=' _ = (Token Nequals None, 2)
+      charExpr '=' '>' _ = (Token DoubleArrow None, 2)
+      charExpr '-' '>' _ = (Token SingleArrow None, 2)
+      charExpr '+' '=' _ = (Token AddAssign None, 2)
+      charExpr '-' '=' _ = (Token SubAssign None, 2)
+      charExpr '*' '=' _ = (Token MultAssign None, 2)
+      charExpr '/' '=' _ = (Token DivAssign None, 2)
+      charExpr '%' '=' _ = (Token ModAssign None, 2)
+      charExpr '&' '=' _ = (Token AndAssign None, 2)
+      charExpr '|' '=' _ = (Token OrAssign None, 2)
+      charExpr '^' '=' _ = (Token XOrAssign None, 2)
+      charExpr '+' '+' _ = (Token Increment None, 2)
+      charExpr '-' '-' _ = (Token Decrement None, 2)
+      charExpr '+' _ _ = (Token Plus None, 1)
+      charExpr '-' _ _ = (Token Minus None, 1)
+      charExpr '*' _ _ = (Token Star None, 1)
+      charExpr '/' _ _ = (Token FSlash None, 1)
+      charExpr '\\' _ _ = (Token BSlash None, 1)
+      charExpr '%' _ _ = (Token Modulo None, 1)
+      charExpr '=' _ _ = (Token Equal None, 1)
       charExpr _ _ _ = (EmptyToken, -1)
 
 
