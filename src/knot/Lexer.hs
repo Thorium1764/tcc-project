@@ -1,7 +1,10 @@
 module Lexer where
 
 import Data.Char
-import qualified Text.Read as Read
+import qualified Data.Text as T
+import qualified Data.Text.IO as TIO
+import qualified Data.Text.Read as R
+import qualified Data.Either as E
 import Control.Monad.State
 
 data TokenType
@@ -59,7 +62,7 @@ data TokenType
    | Modulo
    | IntLit
    | StrLit
-   | FloatLit --also used with e notation
+   | FloatLit
    | HexLit
    | BinLit
    | OctLit
@@ -96,18 +99,18 @@ data TokenType
    deriving (Show, Eq)
 
 data Value
-   = FloatV Float
+   = FloatV Double
    | IntV Int
    | CharV Char
-   | StringV String
-   | NameV String
+   | StringV T.Text
+   | NameV T.Text
    | None
    deriving (Show, Eq)
 
 
 data Token = Token {tokenType :: TokenType, value :: Value} | EmptyToken deriving (Show, Eq)
 
-data TokState = TokState {src :: String, index :: Int, tokens :: [Token]}
+data TokState = TokState {src :: T.Text, index :: Int, tokens :: [Token]}
 
 type Tokenizer a = State TokState a
 
@@ -139,9 +142,9 @@ tokenize = do
          st <- get
          let i = index st
              s = src st
-         if (i + offset >= length s) || (i + offset < 0)
+         if (i + offset >= T.length s) || (i + offset < 0)
             then pure '\0'
-            else pure (s !! (i + offset))
+            else pure (T.index s (i + offset))
 
       skipOne :: Tokenizer ()
       skipOne = do
@@ -204,14 +207,14 @@ tokenize = do
          chr <- peek 0
          if chr /= '\'' && chr /= '\0'
             then handleEscChar (chr : buf)
-            else modify (\st -> st {tokens = Token CharLit (StringV $ reverse buf) : tokens st})
+            else modify (\st -> st {tokens = Token CharLit (StringV $ T.pack $ reverse buf) : tokens st})
 
       handleWord :: String -> Tokenizer ()
       handleWord buf = do
          chr <- peek 0
          if isAlphaNum chr
             then skipOne >> handleWord (chr : buf)
-            else identifyKeywords (reverse buf)
+            else identifyKeywords (T.pack $ reverse buf)
 
       handleString :: String -> Tokenizer ()
       handleString buf = do
@@ -219,30 +222,34 @@ tokenize = do
          chr <- peek 0
          if chr /= '"' && chr /= '\0'
             then handleString (chr : buf)
-            else modify (\st -> st { tokens = Token StrLit (StringV $ reverse buf) : tokens st})
+            else modify (\st -> st { tokens = Token StrLit (StringV $ T.pack $ reverse buf) : tokens st})
 
       handleNum :: String -> Tokenizer ()
       handleNum buf = do
          st <- get
          if isFloatDigit (peekraw (src st) (index st))
             then skipOne >> handleNum (peekraw (src st) (index st) : buf)
-            else saveNum (reverse buf)
+            else saveNum $ T.pack $ reverse buf
 
-      saveNum :: String -> Tokenizer ()
+      saveNum :: T.Text -> Tokenizer ()
       saveNum buf
-         | not (isVFLoat buf)
-         = modify (\st -> st { tokens = Token Error (StringV ("Error: " ++ buf ++ " is not a valid Number")) : tokens st})
+         | not (isVFloat buf)
+         = modify (\st -> st { tokens = Token Error (StringV $ T.pack ("Error: " ++ T.unpack buf ++ " is not a valid Number")) : tokens st})
 
          | isFloat buf
-         = modify (\st -> st { tokens = Token FloatLit (FloatV (read buf)) : tokens st})
+         = modify (\st -> st { tokens = Token FloatLit (FloatV ( fst $ E.fromRight (0, T.pack "") (R.double buf) )) : tokens st})
+
+         | not (isVInt buf)
+         = modify (\st -> st { tokens = Token Error (StringV $ T.pack ("Error: " ++ T.unpack buf ++ " is not a valid Number")) : tokens st})
 
          | otherwise
-         = modify (\st -> st { tokens = Token IntLit (IntV (read buf)) : tokens st})
+         = modify (\st -> st { tokens = Token IntLit (IntV (fst $ E.fromRight (0, T.pack "") (R.decimal buf))) : tokens st})
 
-      identifyKeywords :: String -> Tokenizer ()
-      identifyKeywords "fn" = modify (\st -> st { tokens = Token Function None : tokens st})
-      identifyKeywords "char" = modify (\st -> st { tokens = Token CharT None : tokens st})
-      identifyKeywords buf = modify (\st -> st { tokens = Token Identifier (NameV buf) : tokens st})
+      identifyKeywords :: T.Text -> Tokenizer ()
+      identifyKeywords buf =
+         case T.unpack buf of
+            "fn" -> modify (\st -> st {tokens = Token Function None : tokens st})
+            _ -> modify (\st -> st {tokens = Token Identifier (NameV buf) : tokens st})
 
       charExpr :: Char -> Char -> Char -> (Token, Int)
       charExpr '<' '<' '=' = (Token LShiftAssign None, 3)
@@ -277,15 +284,18 @@ tokenize = do
 
 
 
-peekraw :: String -> Int -> Char
+peekraw :: T.Text -> Int -> Char
 peekraw src idx =
-   if idx > length src || idx < 0
+   if idx > T.length src || idx < 0
       then '\0'
-      else src !! idx
+      else T.index src idx
 
 isBinDigit c = c == '0' || c == '1'
 isFloatDigit c = isDigit c || elem c ".eE+-"
-isVFLoat f = case Read.readMaybe f :: Maybe Double of
-   Just _ -> True
-   Nothing -> False
-isFloat f = elem '.' f || elem 'e' f || elem 'E' f
+isVFloat f = case R.double f of
+   Right (_,_) -> True
+   Left _  -> False
+isVInt f = case R.decimal f of
+   Right (_,_) -> True
+   Left _  -> False
+isFloat f = elem '.' g || elem 'e' g || elem 'E' g where g = T.unpack f
