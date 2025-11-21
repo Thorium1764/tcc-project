@@ -8,16 +8,17 @@ pub fn main() !void
     const allocator = arena.allocator();
     const argv = try std.process.argsAlloc(allocator);
     defer std.process.argsFree(allocator, argv);
-    std.debug.print("contents of {s}:\n", .{argv[1]});
 
     const file = try std.fs.cwd().openFile(argv[1], .{});
     defer file.close();
 
     const src = try file.readToEndAlloc(allocator, std.math.maxInt(usize));
 
-    const tokens = try lexer.tokenize(src);
+    var src_code = lexer.src{ .src = src, .index = 0};
+    const tokens = try src_code.tokenize(allocator);
 
-    for (tokens) |token| {
+    const tokens_slice = tokens.items;
+    for (tokens_slice) |token| {
         try printStruct(lexer.Token, token);
     }
 }
