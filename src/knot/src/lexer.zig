@@ -21,7 +21,8 @@ pub const TokenType = enum {
     Else,
     Ident,
     Print,
-    Cast
+    Cast,
+    EmptyToken,
 };
 
 pub const Value = union(enum){
@@ -33,8 +34,8 @@ pub const Value = union(enum){
 };
 
 pub const Token = struct {
-    toktype: TokenType,
-    line: u32,
+    toktype: TokenType = TokenType.EmptyToken,
+    line: u32 = 0,
     value: ?Value,
 };
 
@@ -42,12 +43,12 @@ pub const TypeV = enum {
     Int,
     Char,
     String,
-    //Float,
+    Float,
 };
 
 pub const src = struct {
     src: []const u8,
-    index: u32,
+    index: u32 = 0,
 
 
     pub fn tokenize(self: *src, alloc: std.mem.Allocator) !std.ArrayList(Token) {
@@ -70,7 +71,7 @@ pub const src = struct {
                 '0'...'9' => try tokens.append(alloc, try self.checkNum(alloc, line)),
                 '\n' => {line += 1; self.consume();},
                 ' ' => self.consume(),
-                else => {std.debug.print("Invalid Token detected at line .{d}: .{c}\n", .{line, self.peek(0)}); break;},
+                else => std.debug.panic("Invalid Token detected at line .{d}: .{c}\n", .{line, self.peek(0)}),
             }
         }
         return tokens;

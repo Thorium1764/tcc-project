@@ -1,5 +1,6 @@
 const std = @import("std");
 const lexer = @import("lexer.zig");
+const parser = @import("parser.zig");
 
 pub fn main() !void
 {
@@ -12,13 +13,16 @@ pub fn main() !void
     const file = try std.fs.cwd().openFile(argv[1], .{});
     defer file.close();
 
-    const src = try file.readToEndAlloc(allocator, std.math.maxInt(usize));
+    var src = lexer.src{.src = try file.readToEndAlloc(allocator, std.math.maxInt(usize))};
 
-    var src_code = lexer.src{ .src = src, .index = 0};
-    const tokens = try src_code.tokenize(allocator);
+    const toks = try src.tokenize(allocator);
 
-    const tokens_slice = tokens.items;
-    for (tokens_slice) |token| {
+    var tokens = parser.Tokens{.tokens = toks.items};
+
+    const ast = try tokens.parse(allocator);
+    _ = ast;
+
+    for (toks.items) |token| {
         try printStruct(lexer.Token, token);
     }
 }
